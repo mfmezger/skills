@@ -1,0 +1,92 @@
+# Lab Report {{ number or "<Nummer>" }}: {{ title }}
+
+| Attribute | Value |
+|---|---|
+| Document Status | {{ status }} |
+| Author | {{ author }} |
+| Date | {{ date }} |
+| Reviewer | {{ reviewer }} |
+| Story | {{ story }} |
+| Repository/Branch | {{ repo_branch }} |
+
+## Abstract
+
+{{ abstract }}
+
+## Goals & Problem Description
+
+{{ goals }}
+
+## Assumptions & Limitations
+
+{{ assumptions }}
+
+## Experiment Setup
+
+{{ setup }}
+{% if code_snippets %}
+
+### Code
+
+{% for snip in code_snippets %}
+**`{{ snip.path }}`**
+
+```{{ snip.lang }}
+{{ snip.content }}
+```
+
+{% endfor %}
+{% endif %}
+
+## Results
+
+{% if metrics %}
+### Key Metrics
+
+| Metric | Value |
+|---|---|
+{% for k, v in metrics.items() -%}
+| {{ k }} | {{ v }} |
+{% endfor %}
+
+{% endif %}
+{{ results }}
+{% if tables %}
+
+### Data Tables
+
+{% for tbl in tables %}
+**{{ tbl.title }}** _(source: `{{ tbl.source }}`{% if tbl.truncated %}, showing first {{ tbl.rows_shown }} of {{ tbl.rows_total }} rows{% endif %})_
+
+{{ tbl.markdown }}
+
+{% endfor %}
+{% endif %}
+{% if charts %}
+
+### Charts
+
+{% for chart in charts %}
+![{{ chart.alt }}]({{ chart.path }})
+_{{ chart.caption }}_
+
+{% endfor %}
+{% endif %}
+{% if images %}
+
+### Figures
+
+{% for img in images %}
+![{{ img.alt }}]({{ img.path }})
+_{{ img.caption }}_
+
+{% endfor %}
+{% endif %}
+
+## Conclusion
+
+{{ conclusion }}
+
+## Improvements / Possible Next Steps
+
+{{ next_steps }}
