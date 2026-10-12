@@ -462,12 +462,18 @@ def ci(
         project=project,
     )
 
-    # Policy evaluations require the PR's artifact URI.
-    artifact_uri = f"vstfs:///CodeReview/CodeReviewId/{c.org}/{pr_id}"
-    # The policy endpoint sits at the org level (no project prefix).
+    # The artifact URI needs the project *ID* (not the org or project name). `_get_pr_repo`
+    # returns no PR body when --repo is given, so fetch it then.
+    if not (pr or {}).get("repository", {}).get("project", {}).get("id"):
+        pr = c.get(f"/_apis/git/repositories/{repo_id}/pullRequests/{pr_id}", project=project) or {}
+    project_id = pr["repository"]["project"]["id"]
+    artifact_uri = f"vstfs:///CodeReview/CodeReviewId/{project_id}/{pr_id}"
+    # Project-scoped endpoint, only available as a preview API version.
     pol = c.get(
-        f"/{project}/_apis/policy/evaluations",
+        "/_apis/policy/evaluations",
+        project=project,
         params={"artifactId": artifact_uri},
+        api_version="7.1-preview.1",
     )
 
     emit(
