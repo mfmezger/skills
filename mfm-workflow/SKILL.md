@@ -15,8 +15,8 @@ Invoke at the START of essentially any coding task in Marc's projects — 'follo
 7. STEP 6 — Commit. Use the `commit` skill: Conventional Commits, required type+scope, imperative <=72-char subject, body only if it earns its place. One focused commit per logical change.
 8. STEP 7 — Push. Push the branch (git push -u origin <branch>). Never --force; use --force-with-lease if a rebase requires it.
 9. STEP 8 — Open PR. Use the `ado-pr-generate` skill against Azure DevOps (pass the org explicitly — confirm it from the git remote; verify the PAT by probing for a 200, not by trusting the env var name). Active not draft unless asked. Put long evidence in a PR comment (ADO caps descriptions at 4000 chars).
-10. STEP 9 — Debug pipeline. After the PR opens CI, use the `ado-pipeline-analysis` skill to check the build and read failing-step logs. Reproduce failures locally (the gate must pass on the real post-merge state, not just the branch) and push fixes until green.
-11. Keep the user at the decision points: which plan (step 2/3), GO/REWORK outcomes (step 5), and merge (step 8) are theirs to confirm. Do the mechanical steps autonomously; surface the judgement calls.
+10. STEP 9 — Debug pipeline. After the PR opens CI, use the `ado-pipeline-analysis` skill to check the build and read failing-step logs. Reproduce failures locally (the gate must pass on the real post-merge state — the PR merged into the current target branch — not just the branch) and push fixes until green.
+11. Keep the user at the decision points: which plan (step 2/3), GO/REWORK outcomes (step 5), and the merge are theirs to confirm. Merge only after step 9 is green, and only when the user explicitly says so. Do the mechanical steps autonomously; surface the judgement calls.
 
 ## Pitfalls
 - Do not skip straight to coding. The most expensive mistakes in this workflow happen because Investigate (step 1) and Grill (step 3) were skipped — you reinvent an existing abstraction, or you build the wrong thing well.
@@ -33,6 +33,6 @@ Invoke at the START of essentially any coding task in Marc's projects — 'follo
 ## Verification
 1. Mode was declared up front (full flow vs collapsed) and matched the size of the change.
 2. For non-trivial work: a scout ran in step 1, a plan was grounded in house rules (capy) and shared via grilling before any code, and a fresh independent reviewer returned GO before commit.
-3. Every change is behind a Conventional Commit and an Azure DevOps PR — no direct-to-main work.
+3. Every change is behind a Conventional Commit and an Azure DevOps PR — no direct-to-main work unless the user explicitly asked for it.
 4. The gate is green on the real post-merge state, not just the branch, and any pipeline failure was read via ado-pipeline-analysis and fixed.
 5. The user confirmed the plan, the GO/REWORK outcome, and the merge — the judgement calls were surfaced, the mechanical steps were done autonomously.
