@@ -13,6 +13,7 @@ Subcommands:
   update       Update an existing PR (title/description/draft/work items).
   link-wi      Link work items to an existing PR.
   comment      Add a single top-level comment thread to a PR.
+  abandon      Abandon an active PR, optionally with a closing comment.
 
 The "create" command is intentionally deterministic: the caller (LLM) is
 expected to compute the title and description from `detect` output and pass
@@ -288,6 +289,8 @@ def update(
     if title is not None:
         body["title"] = title
     if description is not None:
+        if not description.strip():
+            raise SystemExit("Refusing to set an empty description; pass the text or omit --description.")
         body["description"] = description
     if draft is not None:
         body["isDraft"] = draft
@@ -301,7 +304,18 @@ def update(
         project=project,
         json_body=body,
     )
-    emit({"pullRequestId": pr.get("pullRequestId"), "updated": list(body.keys())})
+    emit(
+        {
+            "pullRequestId": pr.get("pullRequestId"),
+            "updated": list(body.keys()),
+            "status": pr.get("status"),
+            "isDraft": pr.get("isDraft"),
+            "title": pr.get("title"),
+            "targetRefName": pr.get("targetRefName"),
+            "descriptionLength": len(pr.get("description") or ""),
+            "url": f"https://dev.azure.com/{c.org}/{project}/_git/{repo}/pullrequest/{pr_id}",
+        }
+    )
 
 
 @app.command("link-wi")
@@ -386,6 +400,42 @@ def comment(
         json_body=body,
     )
     emit({"threadId": res.get("id"), "pullRequestId": pr_id})
+
+
+@app.command()
+def abandon(
+    pr_id: int = typer.Option(..., "--pr-id"),
+    comment_text: str | None = typer.Option(None, "--comment", help="Closed comment thread posted before abandoning, e.g. 'Superseded by !123'."),
+    project: str | None = typer.Option(None, "--project"),
+    repo: str | None = typer.Option(None, "--repo"),
+    org: str | None = typer.Option(None, "--org"),
+    repo_path: str = typer.Option(".", "--repo-path"),
+) -> None:
+    """Abandon an active PR, optionally leaving a (closed) comment explaining why."""
+    ctx = _detect_context(repo_path)
+    project = project or ctx["project"]
+    repo = repo or ctx["repo"]
+    if not project or not repo:
+        raise SystemExit("Could not infer project/repo. Pass --project and --repo.")
+
+    c = make_client(org)
+    repo_id = _resolve_repo(c, project, repo)
+    pr_path = f"/_apis/git/repositories/{repo_id}/pullRequests/{pr_id}"
+    current = c.get(pr_path, project=project) or {}
+    if current.get("status") != "active":
+        raise SystemExit(f"PR {pr_id} is {current.get('status')!r}, not active; nothing to abandon.")
+
+    thread_id = None
+    if comment_text:
+        res = c.post(
+            f"{pr_path}/threads",
+            project=project,
+            json_body={"comments": [{"parentCommentId": 0, "content": comment_text, "commentType": 1}], "status": 4},  # 4 = closed
+        )
+        thread_id = (res or {}).get("id")
+
+    pr = c.patch(pr_path, project=project, json_body={"status": "abandoned"})
+    emit({"pullRequestId": pr_id, "status": pr.get("status"), "commentThreadId": thread_id})
 
 
 if __name__ == "__main__":

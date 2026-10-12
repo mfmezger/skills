@@ -85,7 +85,19 @@ For "push more commits to PR 42 and refresh the description":
    [--title "..."] [--draft/--no-draft] [--target-branch main]`.
 
 `update` does **not** push commits — it only PATCHes PR metadata. Pushing
-the branch is enough to update the diff itself.
+the branch is enough to update the diff itself. It prints the PR's resulting
+`status`, `title`, `targetRefName`, `descriptionLength` and `url`, so the
+change can be verified from the output.
+
+### Step 6 — Abandoning a superseded PR
+
+```bash
+uv run scripts/pr_generate.py abandon --pr-id 42 --comment "Superseded by !57."
+```
+
+Posts the comment as a closed thread, then sets the PR to `abandoned`. Refuses
+(exit non-zero) if the PR is not `active`. Abandoning is a user decision: only
+do it when the user asked for it.
 
 ## Defaults & conventions
 
