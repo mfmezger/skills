@@ -16,7 +16,9 @@ PRs. Read steps are non-destructive; write steps (`comment`, `inline`,
 - **Auth:** `AZURE_DEVOPS_PAT` env var with **Code (Read)** for read
   commands and **Code (Read & Write)** for `comment`/`inline`/`vote`.
   Create at `https://dev.azure.com/<org>/_usersSettings/tokens`.
-- `AZURE_DEVOPS_ORG` (user default: `schwarzit-chicago`); override with `--org`.
+- **Organization:** pass `--org <org>` explicitly on every call (take it from
+  the git remote). `AZURE_DEVOPS_ORG` is only a fallback, and a PAT is usually
+  valid for a single org, so a wrong default shows up as a 401.
 
 Script: `scripts/pr_review.py` (relative to this skill's directory)
 

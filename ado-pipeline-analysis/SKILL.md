@@ -17,8 +17,9 @@ it and present the results to the user as a markdown table.
 - **Auth:** `AZURE_DEVOPS_PAT` env var holding a Personal Access Token with
   at minimum **Build (Read)** scope. Create at
   `https://dev.azure.com/<org>/_usersSettings/tokens`.
-- `AZURE_DEVOPS_ORG` env var sets the default organization. Override with
-  `--org` per call. The user's default is `schwarzit-chicago`.
+- **Organization:** pass `--org <org>` explicitly on every call (take it from
+  the git remote). `AZURE_DEVOPS_ORG` is only a fallback, and a PAT is usually
+  valid for a single org, so a wrong default shows up as a 401.
 
 ## Project handling
 
