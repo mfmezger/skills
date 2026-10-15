@@ -64,14 +64,22 @@ def _find_projects(c: Any, org: str, repo: str | None, limit: int) -> list[dict[
     items, _ = c.paged(f"/orgs/{org}/projects", params, 5000)
     if repo:
         needle = repo.lower()
-        items = [p for p in items if needle in p["attributes"].get("name", "").lower()]
+        items = [p for p in items if needle in f"{p['attributes'].get('name', '')} {_target(p)}".lower()]
     return items[:limit]
+
+
+def _target(project: dict[str, Any]) -> str:
+    """Display name of the expanded target, e.g. the ADO repo path."""
+    data = ((project.get("relationships") or {}).get("target") or {}).get("data") or {}
+    return (data.get("attributes") or {}).get("display_name") or ""
 
 
 @app.command()
 def projects(
     org: str | None = OrgOpt,
-    repo: str | None = typer.Option(None, "--repo", "-r", help="Case-insensitive substring of the project name."),
+    repo: str | None = typer.Option(
+        None, "--repo", "-r", help="Case-insensitive substring of project name or target (repo path)."
+    ),
     limit: int = typer.Option(100, "--limit"),
 ) -> None:
     """Projects (one per manifest / code scan) with latest issue counts."""
@@ -81,7 +89,6 @@ def projects(
     for p in _find_projects(c, org_id, repo, limit):
         a = p["attributes"]
         counts = (p.get("meta") or {}).get("latest_issue_counts") or {}
-        target = ((p.get("relationships") or {}).get("target") or {}).get("data") or {}
         out.append(
             {
                 "id": p["id"],
@@ -91,7 +98,7 @@ def projects(
                 "branch": a.get("target_reference"),
                 "origin": a.get("origin"),
                 "status": a.get("status"),
-                "target": (target.get("attributes") or {}).get("display_name"),
+                "target": _target(p) or None,
                 "issues": {k: counts.get(k) for k in ("critical", "high", "medium", "low")},
             }
         )
@@ -120,7 +127,7 @@ def _fix(coords: list[dict[str, Any]]) -> list[str]:
 def issues(
     org: str | None = OrgOpt,
     project: list[str] = ProjectIdsOpt,
-    repo: str | None = typer.Option(None, "--repo", "-r", help="Use all projects whose name contains this."),
+    repo: str | None = typer.Option(None, "--repo", "-r", help="Use all projects whose name or target contains this."),
     severity: str | None = typer.Option(None, "--severity", help="Comma list: critical,high,medium,low."),
     issue_type: str | None = typer.Option(
         None, "--type", help="package_vulnerability, license, code, config, secrets, cloud, custom."
@@ -136,7 +143,7 @@ def issues(
     names = {p["id"]: p["attributes"].get("name") for p in _find_projects(c, org_id, repo, 200)} if repo else {}
     ids = list(project) or list(names)
     if not ids:
-        raise SystemExit(f"No Snyk project name contains {repo!r}. Try: snyk.py projects")
+        raise SystemExit(f"No Snyk project name or target contains {repo!r}. Try: snyk.py projects")
     rows = []
     for pid in ids:
         params = {

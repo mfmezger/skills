@@ -55,9 +55,9 @@ def _scope(branch: str | None, pr: str | None) -> dict[str, Any]:
     return {"branch": branch, "pullRequest": pr}
 
 
-def _file(component: str | None) -> str | None:
-    """'project:src/a.py' -> 'src/a.py'."""
-    return component.split(":", 1)[1] if component and ":" in component else component
+def _file(component: str | None, key: str) -> str | None:
+    """'<key>:src/a.py' -> 'src/a.py'; keys may contain ':' themselves."""
+    return component.removeprefix(f"{key}:") if component else component
 
 
 def _csv(value: str | None) -> list[str] | None:
@@ -188,7 +188,7 @@ def issues(
     c = make_client()
     key = resolve_project(project)
     params = {
-        "components": [key, *(f"{key}:{f}" for f in file)] if file else key,
+        "components": [f"{key}:{f}" for f in file] if file else key,
         **_scope(branch, pr),
         "inNewCodePeriod": True if new_code else None,
         "impactSeverities": _csv(severity),
@@ -213,7 +213,7 @@ def issues(
             "issues": [
                 {
                     "key": i.get("key"),
-                    "file": _file(i.get("component")),
+                    "file": _file(i.get("component"), key),
                     "line": i.get("line"),
                     "message": i.get("message"),
                     "rule": i.get("rule"),
@@ -257,7 +257,7 @@ def hotspots(
             "hotspots": [
                 {
                     "key": h.get("key"),
-                    "file": _file(h.get("component")),
+                    "file": _file(h.get("component"), key),
                     "line": h.get("line"),
                     "message": h.get("message"),
                     "category": h.get("securityCategory"),

@@ -17,7 +17,7 @@ code or dependency instead; Snyk picks it up on its next test.
 - `uv` installed; the script declares its deps inline (PEP 723). Behind Zscaler, set
   `UV_SYSTEM_CERTS=1` so uv can download them. HTTPS calls use the OS trust store.
 - `SNYK_TOKEN` — personal API token (Account settings → Auth Token).
-- `SNYK_ORG_ID` — default org id; `orgs` lists the ids. `--org` overrides it.
+- Optional `SNYK_ORG_ID` — fallback org id when `--org` is not given.
 - Optional `SNYK_API_URL` for regional tenants, e.g. `https://api.eu.snyk.io` (default
   `https://api.snyk.io`).
 - `test` needs the Snyk CLI (`snyk` on PATH); the API commands do not.
@@ -34,15 +34,20 @@ uv run --script ~/.agents/skills/snyk/scripts/snyk.py <command> [options]
 |---|---|
 | `whoami` | Token check, user, default org. |
 | `orgs [--name]` | Org ids and slugs. |
-| `projects [-r <repo>]` | Projects (one per manifest or code scan) with branch and latest critical/high/medium/low counts. |
+| `projects [-r <repo>]` | Projects with type, branch, target (repo path) and latest critical/high/medium/low counts. |
 | `issues -r <repo>` / `-p <id>` | Open issues, worst first: `location` (`pkg@version` or `file:line`), `ids` (SNYK-/CVE-), `fix` options. Filters: `--severity critical,high`, `--type package_vulnerability\|license\|code\|…`, `--include-ignored`, `--limit` (per project). |
 | `test [path] [--code] [--all-projects]` | Local scan with the Snyk CLI, deduplicated per manifest; nothing is uploaded. |
 
-## Finding the projects
+## Finding the org and projects
 
-Snyk project names look like `<org>/<repo>(<branch>):<manifest>`; one repo has several projects
-(one per manifest plus one for code). Use `projects -r <repo name>` and check the `branch`.
-If nothing matches, say so — the repo may not be imported into Snyk; offer `test` instead.
+There is one org per Azure DevOps project, named `xx-sit-odj-<ado project>` (ADO project
+`schwarzit.genai-prism-ai-pz` → org `xx-sit-odj-genai-prism-ai-pz`). Take the ADO project from the
+git remote, run `orgs --name <ado project>` and pass that id as `--org`; `SNYK_ORG_ID` is only a
+fallback.
+
+Projects are usually CLI-monitored from the pipeline (e.g. `genai-prism-ai-pz-api-app`); the
+ADO repo path is in `target`. `projects -r <repo name>` matches name and target. Check `branch`.
+If nothing matches, say so — the repo may not be in Snyk; offer `test` instead.
 
 ## Fixing issues in the current repo
 
