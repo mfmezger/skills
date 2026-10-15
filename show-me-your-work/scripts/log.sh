@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Append a well-formed row to a show-me-your-work decision log (TSV).
-# Usage: log.sh <logfile> <phase> <decision> <why> <evidence> <result>
+# Append one entry to a show-me-your-work decision log (Markdown).
+# Usage: log.sh <logfile.md> <phase> <decision> <why> <evidence> <result> [details]
 set -euo pipefail
 
-if [ "$#" -ne 6 ]; then
-	printf 'usage: log.sh <logfile> <phase> <decision> <why> <evidence> <result>\n' >&2
+if [ "$#" -lt 6 ] || [ "$#" -gt 7 ]; then
+	printf 'usage: log.sh <logfile.md> <phase> <decision> <why> <evidence> <result> [details]\n' >&2
 	exit 1
 fi
 
@@ -17,26 +17,27 @@ if [ -n "$logdir" ] && [ "$logdir" != "." ] && [ ! -d "$logdir" ]; then
 fi
 
 # Use `>>` here, never `>`. A network mount can fail this test for a log
-# that exists. Then the cost is one stray header line, not the rows.
+# that exists. Then the cost is one stray title line, not the entries.
 if [ ! -s "$logfile" ]; then
-	printf 'ts\tphase\tdecision\twhy\tevidence\tresult\n' >> "$logfile"
+	printf '# Decision log: %s\n' "$(basename "$logfile" .md)" >> "$logfile"
 fi
 
-ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-# Strip tabs/newlines/CR so cells stay on one line, and prefix any cell
-# whose first char a spreadsheet would parse as a formula (=, +, -, @)
-# with a single quote. The skill expects this log to be read in
-# spreadsheets, so attacker-controlled evidence (PR titles, filenames,
-# generated text) must not become formula execution when a reviewer
-# opens the file.
-clean() {
-	local v
-	v=$(printf '%s' "$1" | tr '\t\n\r' '   ')
-	case "$v" in
-		=*|+*|-*|@*) printf "'%s" "$v" ;;
-		*) printf '%s' "$v" ;;
-	esac
+# Fields stay on one line so every entry keeps the same shape; multi-line
+# material goes into the optional details block.
+one_line() {
+	printf '%s' "$1" | tr '\r\n\t' '   '
 }
-printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-	"$ts" "$(clean "$1")" "$(clean "$2")" "$(clean "$3")" "$(clean "$4")" "$(clean "$5")" \
-	>> "$logfile"
+
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+{
+	printf '\n## %s · %s\n\n' "$ts" "$(one_line "$1")"
+	printf -- '- **Decision:** %s\n' "$(one_line "$2")"
+	printf -- '- **Why:** %s\n' "$(one_line "$3")"
+	printf -- '- **Evidence:** %s\n' "$(one_line "$4")"
+	printf -- '- **Result:** %s\n' "$(one_line "$5")"
+	if [ "$#" -eq 6 ] && [ -n "$6" ]; then
+		fence='```'
+		case "$6" in *'```'*) fence='~~~~' ;; esac
+		printf '\n%stext\n%s\n%s\n' "$fence" "$6" "$fence"
+	fi
+} >> "$logfile"
