@@ -30,6 +30,9 @@ Before implementing:
 - No "flexibility" or "configurability" that wasn't requested.
 - No error handling for impossible scenarios.
 - If you write 200 lines and it could be 50, rewrite it.
+- Consolidate decisions: one choice lives in one source of truth (e.g. a `Settings` field), not repeated at every use site.
+- Within the code you are changing anyway, subtract before you add: remove the dead branch, redundant guard or one-caller wrapper first, then build on the simpler base.
+- Minimize reader load: every layer to trace and every piece of mutable state to hold costs the reader. Don't add a wrapper with one caller or a pass-through layer; prefer returns over mutation and locals over module state. Test: can a new reader answer "where does X come from?" and "what can change X?" in under 30 seconds?
 
 Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
