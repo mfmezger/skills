@@ -48,7 +48,8 @@ the ADO pull request id.
 
 ## Finding the project
 
-If the repo has no key configured, run `projects -q <repo name>`. One match: use it. Several:
+Keys usually follow `xx-sit-<ado project>:<repo>` (e.g. `xx-sit-genai-prism-ai-pz:genai-prism-ai-pz-api`),
+but confirm with `projects -q <repo name>` rather than building one. One match: use it. Several:
 ask the user once which one. None: say so and stop — do not guess keys.
 
 ## Fixing issues in the current repo
