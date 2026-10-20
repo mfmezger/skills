@@ -471,7 +471,7 @@ a{{color:var(--acc)}}code{{font:12px ui-monospace,monospace;background:var(--met
 const key="diff-story:"+document.title+":{html.escape(meta["range"])}",done=new Set(JSON.parse(localStorage.getItem(key)||"[]"));
 const mark=()=>l.forEach(a=>a.classList.toggle("done",done.has(a.dataset.c)));
 document.querySelectorAll(".rev input").forEach(b=>{{b.checked=done.has(b.dataset.c);b.onchange=()=>{{b.checked?done.add(b.dataset.c):done.delete(b.dataset.c);localStorage.setItem(key,JSON.stringify([...done]));mark();b.blur();}};}});mark();
-document.querySelectorAll("tr.fold").forEach(r=>r.onclick=()=>{{document.querySelectorAll(`[data-of="${{r.dataset.fold}}"]`).forEach(x=>x.hidden=!x.hidden);r.remove();}});
+document.querySelectorAll("tr.fold").forEach(r=>{{const t=r.cells[1],label=t.textContent;r.onclick=()=>{{const rows=document.querySelectorAll(`[data-of="${{r.dataset.fold}}"]`),open=rows[0].hidden;rows.forEach(x=>x.hidden=!open);t.textContent=open?`▴ hide ${{rows.length}} lines`:label;}};}});
 const go=n=>{{i=Math.max(0,Math.min(s.length-1,n));s[i].scrollIntoView({{behavior:"smooth"}});}};
 document.addEventListener("keydown",e=>{{if(e.metaKey||e.ctrlKey||e.altKey)return;if(e.key==="j")go(i+1);if(e.key==="k")go(i-1);
 if(e.key==="n"){{const k=s.findIndex((x,m)=>m>i&&!done.has(x.id));if(k>=0)go(k);}}}});
