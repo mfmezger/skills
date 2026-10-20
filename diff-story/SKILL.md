@@ -6,7 +6,9 @@ author: Marc Fabian Mezger <57255687+mfmezger@users.noreply.github.com>
 
 # Diff story
 
-One model call turns `BASE...HEAD` into a **story**: chapters in reading order, each with up to three sentences on *why*, and a note of at most 15 words next to every hunk that carries a decision or a risk. Every other hunk lands in a collapsed "Mechanical" chapter, so nothing is hidden. The model only references hunk ids, so it cannot cite lines that do not exist.
+One model call turns `BASE...HEAD` into a **story**: chapters in reading order, each with up to three sentences on *why*, and a note of at most 15 words next to every hunk that carries a decision or a risk. Test hunks hang, collapsed, under the chapter they verify; every other hunk lands in a collapsed "Mechanical" chapter, so nothing is hidden. The model only references hunk ids, so it cannot cite lines that do not exist.
+
+Without the model, the script also marks code moved between hunks, warns about removed module-level Python names that HEAD still imports, highlights Python (from the real file versions), highlights the changed part of each line, folds long runs and keeps per-chapter "reviewed" ticks in the browser (`j`/`k`, `n` for the next unreviewed chapter).
 
 Script: `scripts/diff_story.py`, relative to this skill's directory (stdlib only, run with `uv run` or `python3`).
 
