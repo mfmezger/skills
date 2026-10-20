@@ -18,6 +18,7 @@ import difflib
 import functools
 import html
 import io
+import itertools
 import json
 import keyword
 import os
@@ -54,8 +55,8 @@ TRIVIAL_LINE = re.compile(
 # Module-level Python definitions (def, class, constant); methods are skipped, their names repeat across classes.
 DEFINITION = re.compile(r"^([-+])(?:(?:async\s+)?(?:def|class)\s+(\w+)|([A-Za-z_]\w*)\s*(?::[^=]*)?=(?!=))")
 # Runs longer than the limit are folded to head + tail rows: (head, tail, limit).
-FOLD = {"ctx": (3, 3, 8), "del": (4, 0, 12), "add": (40, 0, 60)}
-FOLD_LABEL = {"ctx": "unchanged", "del": "deleted", "add": "added"}
+FOLD = {"ctx": (3, 3, 8), "del": (4, 0, 12), "add": (40, 0, 60), "chg": (12, 0, 24)}
+FOLD_LABEL = {"ctx": "unchanged", "del": "deleted", "add": "added", "chg": "changed"}
 
 PROMPT = """You turn a git diff into a short, story-ordered review guide. The reader sees each hunk right next to your text.
 
@@ -370,29 +371,74 @@ def render_hunk(hunk: dict, moves: dict[str, list[tuple[str, str]]], highlight: 
             spans[d], spans[a] = changed_spans(lines[d][1:], lines[a][1:])
         i += i == dels
 
-    rows: list[tuple[str, str]] = []
+    # Render every line once; the unified and the side-by-side table reuse these cells.
+    cells: list[dict] = []
     old_no, new_no = hunk.get("old", 0), hunk["start"]
     old_classes = highlight("old", hunk.get("old_file", hunk["file"])) if python else {}
     new_classes = highlight("new", hunk["file"]) if python else {}
     for n, line in enumerate(lines):
         kind = "meta" if "old" not in hunk or line[:1] in {"@", "\\"} else {"+": "add", "-": "del"}.get(line[:1], "ctx")
         if kind == "meta":
-            rows.append((kind, f'<tr class="meta"><td class="no"></td><td class="code">{html.escape(line) or " "}</td></tr>'))
+            cells.append({"kind": kind, "code": html.escape(line) or " "})
             continue
         code = line[1:]
-        number = "" if kind == "del" else str(new_no)
         classes = old_classes.get(old_no) if kind == "del" else new_classes.get(new_no)
-        old_no += kind != "add"
-        new_no += kind != "del"
         if not python:
             classes = [""] * len(code)
         elif classes is None or len(classes) != len(code):
             classes = py_classes(code)  # the file version did not line up (e.g. a rename); fall back to the line alone
-        body = render_code(code, classes, spans.get(n, []))
-        css = f"{kind} mv" if n in hunk.get("moved", ()) else kind
-        rows.append((kind, f'<tr class="{css}"><td class="no">{number}</td><td class="code">{html.escape(line[:1])}{body}</td></tr>'))
+        cells.append({
+            "kind": kind,
+            "old": "" if kind == "add" else str(old_no),
+            "new": "" if kind == "del" else str(new_no),
+            "code": html.escape(line[:1]) + render_code(code, classes, spans.get(n, [])),
+            "css": f"{kind} mv" if n in hunk.get("moved", ()) else kind,
+        })
+        old_no += kind != "add"
+        new_no += kind != "del"
 
-    folded, i, n = [], 0, 0
+    unified = [
+        (c["kind"], f'<tr class="meta"><td class="no"></td><td class="code">{c["code"]}</td></tr>')
+        if c["kind"] == "meta"
+        else (c["kind"], f'<tr class="{c["css"]}"><td class="no">{c["new"]}</td><td class="code">{c["code"]}</td></tr>')
+        for c in cells
+    ]
+
+    def half(cell: dict | None, side: str) -> str:
+        if cell is None:
+            return '<td class="no"></td><td class="code"></td>'
+        css = "" if cell["kind"] == "ctx" else cell["css"]
+        return f'<td class="no {css}">{cell[side]}</td><td class="code {css}">{cell["code"]}</td>'
+
+    # Side by side: context on both sides, each run of deletions paired line by line with the additions after it.
+    split: list[tuple[str, str]] = []
+    k = 0
+    while k < len(cells):
+        if cells[k]["kind"] in {"meta", "ctx"}:
+            cell = cells[k]
+            row = f'<td class="no"></td><td class="code" colspan="3">{cell["code"]}</td>' if cell["kind"] == "meta" else half(cell, "old") + half(cell, "new")
+            split.append((cell["kind"], f'<tr class="{cell["kind"]}">{row}</tr>'))
+            k += 1
+            continue
+        dels, adds = [], []
+        while k < len(cells) and cells[k]["kind"] == "del":
+            dels.append(cells[k])
+            k += 1
+        while k < len(cells) and cells[k]["kind"] == "add":
+            adds.append(cells[k])
+            k += 1
+        split += [("chg", f"<tr>{half(left, 'old')}{half(right, 'new')}</tr>") for left, right in itertools.zip_longest(dels, adds)]
+
+    badges = "".join(f' <a class="badge" href="#{other}">{label} {other}</a>' for label, other in moves.get(hunk["id"], []))
+    return (
+        f'<div class="hunk" id="{hunk["id"]}"><div class="path">{html.escape(hunk["file"])} <span class="hid">{hunk["id"]}</span>{badges}</div>'
+        f'<table class="uni">{fold(unified, hunk["id"] + "u", 1)}</table><table class="sbs"><colgroup><col class="n"><col><col class="n"><col></colgroup>{fold(split, hunk["id"] + "s", 3)}</table></div>'
+    )
+
+
+def fold(rows: list[tuple[str, str]], prefix: str, span: int) -> str:
+    """Fold runs of same-kind rows longer than their limit into head rows, a clickable fold row and hidden rows."""
+    out, i, n = [], 0, 0
     while i < len(rows):
         j = i
         while j < len(rows) and rows[j][0] == rows[i][0]:
@@ -401,18 +447,16 @@ def render_hunk(hunk: dict, moves: dict[str, list[tuple[str, str]]], highlight: 
         head, tail, limit = FOLD.get(kind, (len(run), 0, len(run)))
         if len(run) > limit:
             n += 1
-            group = f"{hunk['id']}-{n}"
+            group = f"{prefix}-{n}"
             hidden = run[head : len(run) - tail]
-            folded += [row for _, row in run[:head]]
-            folded.append(f'<tr class="fold" data-fold="{group}"><td class="no"></td><td>⋯ {len(hidden)} more {FOLD_LABEL[kind]} lines</td></tr>')
-            folded += [row.replace("<tr ", f'<tr hidden data-of="{group}" ', 1) for _, row in hidden]
-            folded += [row for _, row in run[len(run) - tail :]]
+            out += [row for _, row in run[:head]]
+            out.append(f'<tr class="fold" data-fold="{group}"><td class="no"></td><td colspan="{span}">⋯ {len(hidden)} more {FOLD_LABEL[kind]} lines</td></tr>')
+            out += [row.replace("<tr", f'<tr hidden data-of="{group}"', 1) for _, row in hidden]
+            out += [row for _, row in run[len(run) - tail :]]
         else:
-            folded += [row for _, row in run]
+            out += [row for _, row in run]
         i = j
-
-    badges = "".join(f' <a class="badge" href="#{other}">{label} {other}</a>' for label, other in moves.get(hunk["id"], []))
-    return f'<div class="hunk" id="{hunk["id"]}"><div class="path">{html.escape(hunk["file"])} <span class="hid">{hunk["id"]}</span>{badges}</div><table>{"".join(folded)}</table></div>'
+    return "".join(out)
 
 
 def render(story: dict, hunks: list[dict], moves: dict, dangling: dict[str, list[str]], highlight: Callable[[str, str], dict[int, list[str]]], meta: dict) -> str:
@@ -459,21 +503,23 @@ section{{margin-bottom:36px}}h2{{display:flex;align-items:baseline;gap:12px;font
 .hid{{color:var(--mut);font-weight:400}}.badge{{font-weight:400;margin-left:6px}}
 table{{border-collapse:collapse;width:100%;font:12px/1.45 ui-monospace,SFMono-Regular,monospace}}td{{padding:0 8px;white-space:pre;vertical-align:top}}
 td.no{{width:1%;color:var(--mut);text-align:right;user-select:none}}tr.add{{background:var(--add)}}tr.del{{background:var(--del)}}tr.meta{{background:var(--meta);color:var(--mut)}}
-tr.add .chg{{background:var(--addc)}}tr.del .chg{{background:var(--delc)}}tr.mv{{opacity:.55}}tr.fold td{{color:var(--acc);cursor:pointer;background:var(--meta)}}
+tr.add .chg,td.add .chg{{background:var(--addc)}}tr.del .chg,td.del .chg{{background:var(--delc)}}tr.mv,td.mv{{opacity:.55}}td.add{{background:var(--add)}}td.del{{background:var(--del)}}body:not(.sbs) table.sbs,body.sbs table.uni{{display:none}}table.sbs{{table-layout:fixed}}table.sbs col.n{{width:3.5em}}table.sbs td.code{{white-space:pre-wrap;overflow-wrap:anywhere}}.sbs .row{{grid-template-columns:minmax(180px,15%) 1fr}}#view{{font:12px system-ui;margin-left:8px;padding:1px 8px;border:1px solid var(--line);border-radius:6px;background:var(--meta);color:var(--fg);cursor:pointer}}tr.fold td{{color:var(--acc);cursor:pointer;background:var(--meta)}}
 .kw{{color:var(--kw)}}.str{{color:var(--str)}}.com{{color:var(--com);font-style:italic}}.fn{{color:var(--fn)}}.num{{color:var(--num)}}.bi{{color:var(--bi)}}.dec{{color:var(--fn)}}
 a{{color:var(--acc)}}code{{font:12px ui-monospace,monospace;background:var(--meta);padding:1px 4px;border-radius:4px}}details summary{{cursor:pointer;color:var(--mut);margin-bottom:8px}}
 .tests{{margin:4px 0 12px}}
 @media(max-width:1000px){{.layout,.row,.top{{grid-template-columns:1fr}}nav{{position:static;height:auto}}}}
 </style></head><body><div class="layout"><nav>{"".join(toc)}</nav><main>
-<h1>{text(story["title"])}</h1><div class="meta">{html.escape(meta["range"])} · {meta["files"]} files · {len(hunks)} hunks · {html.escape(meta["model"])} · {meta["tokens"]}</div>
+<h1>{text(story["title"])}</h1><div class="meta">{html.escape(meta["range"])} · {meta["files"]} files · {len(hunks)} hunks · {html.escape(meta["model"])} · {meta["tokens"]}<button id="view" title="s">Side by side</button></div>
 <div class="top"><ul>{summary}</ul>{checks_block}</div>{"".join(chapters)}</main></div>
 <script>const s=[...document.querySelectorAll("section")],l=[...document.querySelectorAll("nav a")];let i=0;
 const key="diff-story:"+document.title+":{html.escape(meta["range"])}",done=new Set(JSON.parse(localStorage.getItem(key)||"[]"));
 const mark=()=>l.forEach(a=>a.classList.toggle("done",done.has(a.dataset.c)));
 document.querySelectorAll(".rev input").forEach(b=>{{b.checked=done.has(b.dataset.c);b.onchange=()=>{{b.checked?done.add(b.dataset.c):done.delete(b.dataset.c);localStorage.setItem(key,JSON.stringify([...done]));mark();b.blur();}};}});mark();
 document.querySelectorAll("tr.fold").forEach(r=>{{const t=r.cells[1],label=t.textContent;r.onclick=()=>{{const rows=document.querySelectorAll(`[data-of="${{r.dataset.fold}}"]`),open=rows[0].hidden;rows.forEach(x=>x.hidden=!open);t.textContent=open?`▴ hide ${{rows.length}} lines`:label;}};}});
+const vb=document.getElementById("view"),view=on=>{{document.body.classList.toggle("sbs",on);localStorage.setItem("diff-story:view",on?"sbs":"uni");vb.textContent=on?"Unified":"Side by side";}};
+vb.onclick=()=>view(!document.body.classList.contains("sbs"));view(localStorage.getItem("diff-story:view")==="sbs");
 const go=n=>{{i=Math.max(0,Math.min(s.length-1,n));s[i].scrollIntoView({{behavior:"smooth"}});}};
-document.addEventListener("keydown",e=>{{if(e.metaKey||e.ctrlKey||e.altKey)return;if(e.key==="j")go(i+1);if(e.key==="k")go(i-1);
+document.addEventListener("keydown",e=>{{if(e.metaKey||e.ctrlKey||e.altKey)return;if(e.key==="s")vb.click();if(e.key==="j")go(i+1);if(e.key==="k")go(i-1);
 if(e.key==="n"){{const k=s.findIndex((x,m)=>m>i&&!done.has(x.id));if(k>=0)go(k);}}}});
 const o=new IntersectionObserver(es=>es.forEach(e=>{{if(e.isIntersecting){{i=s.indexOf(e.target);l.forEach((a,k)=>a.classList.toggle("on",k===i));}}}}),{{rootMargin:"0px 0px -70% 0px"}});
 s.forEach(x=>o.observe(x));</script>
