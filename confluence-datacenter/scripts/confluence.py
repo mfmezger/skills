@@ -156,8 +156,14 @@ class ConfluenceClient:
 
     def export_pdf(self, page_id: str) -> bytes:
         url = f"{self.base_url}/spaces/flyingpdf/pdfpageexport.action"
-        response = self.session.get(url, params={"pageId": page_id})
+        # without the XSRF bypass header the action returns 403 "Session Expired"
+        headers = {"X-Atlassian-Token": "no-check", "Accept": "*/*"}
+        response = self.session.get(url, params={"pageId": page_id}, headers=headers, timeout=300)
         response.raise_for_status()
+        # an HTML error page would otherwise be written as a .pdf
+        if not response.content.startswith(b"%PDF"):
+            console.print(f"[red]Error:[/red] export did not return a PDF: {response.text[:200]}")
+            raise typer.Exit(1)
         return response.content
 
 
